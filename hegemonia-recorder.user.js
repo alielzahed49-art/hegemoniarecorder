@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Hegemonia Recorder
 // @namespace    hegemonia-bot
-// @version      1.0.0
+// @version      1.1.0
 // @description  Records the game's API requests (URL, body, reply) straight into the Hegemonia Bot database on Supabase so the bot can be developed from them. Tokens are stripped before sending; the account token is only shown in the panel for you to copy.
 // @match        https://hegemonia.gg/*
 // @match        https://*.hegemonia.gg/*
@@ -39,7 +39,9 @@
   // ---------------------------------------------------------------- what is recorded
   var JWT = /eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g;
   var AUTH_NAME = /^(authorization|x-[a-z-]*(token|auth|session)[a-z-]*|token|access-token)$/i;
-  var SKIP = /analytics|telemetry|sentry|gtag|googletag|clarity|hotjar|posthog|mixpanel|doubleclick|\.(png|jpe?g|gif|webp|svg|ico|css|js|map|woff2?|ttf|mp3|mp4)(\?|$)/i;
+  // only the game's own API (play.hegemonia.gg/api/...): page files, fonts, cdn, version files and the analytics/log calls are skipped
+  var IMPORTANT = /^\/api\//;
+  var SKIP = /\/(cdn|cdn-cgi|web-assets|k9x)\/|\.(png|jpe?g|gif|webp|svg|ico|css|js|map|woff2?|ttf|otf|wasm|txt|mp3|mp4)(\?|$)/i;
   var token = '', authHeader = '';
   var buf = [], timer = null, sentCount = Number(lsGet('hgrec_sent') || 0), state = 'on', seenGet = {};
   var SID = Math.random().toString(36).slice(2, 10);
@@ -81,13 +83,15 @@
     if (typeof b === 'string') return b;
     if (typeof URLSearchParams !== 'undefined' && b instanceof URLSearchParams) return b.toString();
     if (typeof FormData !== 'undefined' && b instanceof FormData) return '[formdata]';
-    return '[binary]';
+    var n = b && (b.byteLength || b.size || (b.buffer && b.buffer.byteLength));
+    return '[binary' + (n ? ' ' + n + ' bytes' : '') + ']';
   }
 
   function record(method, url, status, req, res) {
     if (paused() || SKIP.test(url)) return;
-    var abs;
-    try { abs = new URL(url, location.href).href; } catch (e) { return; }
+    var abs, path;
+    try { var u = new URL(url, location.href); abs = u.href; path = u.pathname; } catch (e) { return; }
+    if (!IMPORTANT.test(path)) return;
     if (method === 'GET') {  // the game polls some endpoints: one sample every 8 s is enough
       var k = abs.split('?')[0];
       if (seenGet[k] && Date.now() - seenGet[k] < 8000) return;
