@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Hegemonia Recorder
 // @namespace    hegemonia-bot
-// @version      1.1.0
+// @version      1.2.0
 // @description  Records the game's API requests (URL, body, reply) straight into the Hegemonia Bot database on Supabase so the bot can be developed from them. Tokens are stripped before sending; the account token is only shown in the panel for you to copy.
 // @match        https://hegemonia.gg/*
 // @match        https://*.hegemonia.gg/*
@@ -27,11 +27,11 @@
 
   var L = {
     ar: { title: 'مسجّل هيجيمونيا', on: 'بيسجّل ويبعت ✓', off: 'متوقف', err: 'مقدرتش أبعت — هحاول تاني', sent: 'اتبعت', copy: 'نسخ التوكن', copied: 'اتنسخ ✓', no_token: 'لسه ملقيتش توكن — سجّل دخول',
-          pause: '⏸ إيقاف التسجيل', resume: '▶ تشغيل التسجيل', send: '📨 ابعت دلوقتي', hide: '🙈 إخفاء (اضغط مطوّل ٣ ثواني على مكان فاضي لإظهاره)' },
+          pause: '⏸ إيقاف التسجيل', resume: '▶ تشغيل التسجيل', send: '📨 ابعت دلوقتي', hide: '🔽 تصغير (دوس على النقطة الصغيرة ترجع)' },
     en: { title: 'Hegemonia Recorder', on: 'Recording and sending ✓', off: 'Paused', err: 'Could not send — will retry', sent: 'sent', copy: 'Copy token', copied: 'Copied ✓', no_token: 'No token yet — log in',
-          pause: '⏸ Pause recording', resume: '▶ Resume recording', send: '📨 Send now', hide: '🙈 Hide (long-press an empty spot for 3 s to bring it back)' },
+          pause: '⏸ Pause recording', resume: '▶ Resume recording', send: '📨 Send now', hide: '🔽 Minimize (tap the small dot to bring it back)' },
     tr: { title: 'Hegemonia Kaydedici', on: 'Kaydediyor ve gönderiyor ✓', off: 'Duraklatıldı', err: 'Gönderilemedi — tekrar denenecek', sent: 'gönderildi', copy: 'Token\'ı kopyala', copied: 'Kopyalandı ✓', no_token: 'Henüz token yok — giriş yap',
-          pause: '⏸ Kaydı duraklat', resume: '▶ Kaydı sürdür', send: '📨 Şimdi gönder', hide: '🙈 Gizle (geri getirmek için boş bir yere 3 sn bas)' }
+          pause: '⏸ Kaydı duraklat', resume: '▶ Kaydı sürdür', send: '📨 Şimdi gönder', hide: '🔽 Küçült (geri getirmek için küçük noktaya dokun)' }
   };
   function lang() { var l = lsGet('hgrec_lang') || (navigator.language || 'en').slice(0, 2); return L[l] ? l : 'en'; }
   function tx(k) { return L[lang()][k] || L.en[k]; }
@@ -172,8 +172,21 @@
 
   // ---------------------------------------------------------------- badge + panel
   var ui, dot, panel;
+  // minimized = a small faint dot that is always there (a full hide could not be undone: the game is one canvas, there is
+  // no empty spot to long-press). Tapping the dot brings the badge back.
+  function mini() { return lsGet('hgrec_mini') === '1'; }
+  function applyMini() {
+    if (!dot) return;
+    var m = mini();
+    dot.style.minWidth = m ? '12px' : '34px';
+    dot.style.height = m ? '12px' : '26px';
+    dot.style.padding = m ? '0' : '0 6px';
+    dot.style.opacity = m ? '.35' : '.85';
+    dot.style.fontSize = m ? '0' : '11px';
+  }
   function paint() {
     if (!dot) return;
+    applyMini();
     dot.style.background = paused() ? '#6b7280' : (state === 'err' ? '#f59e0b' : '#ef4444');
     dot.textContent = buf.length ? String(Math.min(buf.length, 99)) : 'REC';
     if (panel && !panel.hidden) fill();
@@ -213,7 +226,7 @@
       langs.appendChild(b);
     });
     panel.appendChild(langs);
-    panel.appendChild(button(tx('hide'), function () { lsSet('hgrec_hidden', '1'); ui.style.display = 'none'; }));
+    panel.appendChild(button(tx('hide'), function () { lsSet('hgrec_mini', '1'); panel.hidden = true; paint(); }));
   }
   function mount() {
     if (ui || !document.body) return;
@@ -224,14 +237,15 @@
     panel = document.createElement('div');
     panel.hidden = true;
     panel.style.cssText = 'position:absolute;bottom:34px;inset-inline-end:0;width:250px;padding:12px;border-radius:14px;background:#10131a;border:1px solid #2a3042;box-shadow:0 10px 30px rgba(0,0,0,.6);';
-    dot.onclick = function (e) { e.stopPropagation(); panel.hidden = !panel.hidden; if (!panel.hidden) fill(); };
+    dot.onclick = function (e) {
+      e.stopPropagation();
+      if (mini()) { lsSet('hgrec_mini', null); paint(); return; }
+      panel.hidden = !panel.hidden; if (!panel.hidden) fill();
+    };
     document.addEventListener('click', function (e) { if (!panel.hidden && !ui.contains(e.target)) panel.hidden = true; }, true);
     ui.appendChild(panel); ui.appendChild(dot);
     document.body.appendChild(ui);
-    if (lsGet('hgrec_hidden') === '1') ui.style.display = 'none';
-    var pressT = null;
-    document.addEventListener('pointerdown', function (e) { if (e.target === document.body || e.target === document.documentElement) pressT = setTimeout(function () { lsSet('hgrec_hidden', null); ui.style.display = ''; }, 3000); });
-    document.addEventListener('pointerup', function () { clearTimeout(pressT); });
+    if (lsGet('hgrec_hidden') === '1') { lsSet('hgrec_hidden', null); lsSet('hgrec_mini', '1'); }  // v1.1 full hide -> minimized
     paint();
   }
   if (document.body) mount(); else document.addEventListener('DOMContentLoaded', mount);
